@@ -457,7 +457,7 @@ function Receipt({ payment, student }) {
         <button type="button" className="btn-primary justify-center" onClick={() => window.print()}>Print / Save receipt</button>
       </div>
       <div className="text-center">
-        <h2 className="text-xl font-bold">Bal Niketan School</h2>
+        <h2 className="text-xl font-bold">Baal Niketan School</h2>
         <p className="text-sm text-slate-500">Fee payment receipt</p>
       </div>
       <div className="my-4 grid grid-cols-2 gap-2 border-y border-slate-200 py-3 text-sm">

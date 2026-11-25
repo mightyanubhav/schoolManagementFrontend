@@ -1,4 +1,4 @@
 export const schoolBrand = {
-  name: "Bal Niketan School",
+  name: "Baal Niketan School",
   address: "Jonhi, Basua, Aurai",
 };
