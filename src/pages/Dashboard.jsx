@@ -44,6 +44,11 @@ export default function Dashboard() {
     },
     enabled: isAdmin,
   });
+  const timetableReviews = useQuery({
+    queryKey: ["timetable-reviews", userId],
+    queryFn: () => api.get("/timetable/reviews").then((response) => response.data),
+    enabled: isAdmin,
+  });
   const anns = useQuery({
     queryKey: ["dashboard-announcements", userId],
     queryFn: async () => {
@@ -86,6 +91,15 @@ export default function Dashboard() {
         <Stat label="Classes" value={classes.data?.length} />
         {isAdmin && <Stat label="Pending Fees" value={pendingFees != null ? `₹${pendingFees.toLocaleString("en-IN")}` : "—"} />}
       </div>}
+
+      {isAdmin && timetableReviews.data?.length > 0 && <section role="status" className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:mt-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div><h2 className="font-semibold text-amber-950">Timetable review reminder</h2><p className="mt-1 text-sm text-amber-800">Update these subject schedules as part of the six-month review cycle:</p>
+            <ul className="mt-2 list-inside list-disc text-sm text-amber-900">{timetableReviews.data.map((item) => <li key={item.schoolClass._id}>{item.schoolClass.name} · Section {item.schoolClass.section || "A"}{item.missingSchedule ? " — timetable not set" : item.reviewDueDate ? ` — due ${new Date(item.reviewDueDate).toLocaleDateString("en-IN")}` : " — review date needed"}</li>)}</ul>
+          </div>
+          <Link className="btn-primary shrink-0 justify-center" to="/timetable">Review timetables</Link>
+        </div>
+      </section>}
 
       {!isAdmin && <section className="mb-5 mt-5 sm:mb-6 sm:mt-6">
         <div className="mb-3 text-sm font-semibold text-slate-900">Quick access</div>

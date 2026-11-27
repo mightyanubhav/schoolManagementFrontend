@@ -5,6 +5,7 @@ import { PageHeader, Modal, Field } from "../components/ui";
 import Pagination from "../components/Pagination";
 import PasswordInput from "../components/PasswordInput";
 import { useAuth } from "../context/AuthContext";
+import { useDebouncedSearch } from "../hooks/useDebouncedSearch";
 
 const blank = {
   name: "",
@@ -31,25 +32,27 @@ export default function Students() {
   const [form, setForm] = useState(blank);
   const [profileImage, setProfileImage] = useState(null);
   const [documents, setDocuments] = useState([]);
+  const [downloadingId, setDownloadingId] = useState("");
   const [search, setSearch] = useState("");
   const [classFilter, setClassFilter] = useState("");
   const [sectionFilter, setSectionFilter] = useState("");
   const [genderFilter, setGenderFilter] = useState("");
   const [casteFilter, setCasteFilter] = useState("");
   const [page, setPage] = useState(1);
+  const debouncedSearch = useDebouncedSearch(search, () => setPage(1));
 
   const students = useQuery({
-    queryKey: ["students", classFilter, sectionFilter, genderFilter, casteFilter, search, page],
-    queryFn: async () => {
+    queryKey: ["students", classFilter, sectionFilter, genderFilter, casteFilter, debouncedSearch, page],
+    queryFn: async ({ signal }) => {
       const response = await api.get("/students", { params: {
       ...(classFilter && { class: classFilter }),
       ...(sectionFilter && { section: sectionFilter }),
       ...(genderFilter && { gender: genderFilter }),
       ...(casteFilter && { caste: casteFilter }),
-      ...(search && { q: search }),
+      ...(debouncedSearch && { q: debouncedSearch }),
       page,
       limit: 25,
-      } });
+      }, signal });
       return { items: response.data, total: Number(response.headers["x-total-count"] || 0) };
     },
   });
@@ -124,6 +127,25 @@ export default function Students() {
     }
   }
 
+  async function downloadAdmissionProfile(student) {
+    setDownloadingId(student._id);
+    try {
+      const response = await api.get(`/students/${student._id}/admission.pdf`, { responseType: "blob" });
+      const url = URL.createObjectURL(response.data);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `admission-${student.admissionNo}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      window.alert(error.response?.data?.error || "Could not download student admission PDF");
+    } finally {
+      setDownloadingId("");
+    }
+  }
+
   const visibleStudents = students.data?.items || [];
 
   return (
@@ -135,7 +157,7 @@ export default function Students() {
       />
 
       <div className="card mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <Field label="Search"><input className="input w-full" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Name, ID or roll" /></Field>
+        <Field label="Search"><input className="input w-full" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Name, ID or roll" /></Field>
         <Field label="Class"><select className="input" value={classFilter} onChange={(e) => { setClassFilter(e.target.value); setPage(1); }}><option value="">All classes</option>{classes.data?.map((schoolClass) => <option key={schoolClass._id} value={schoolClass._id}>{schoolClass.name} · Section {schoolClass.section || "A"}</option>)}</select></Field>
         <Field label="Section"><input className="input" value={sectionFilter} onChange={(e) => { setSectionFilter(e.target.value); setPage(1); }} placeholder="All sections" /></Field>
         <Field label="Gender"><select className="input" value={genderFilter} onChange={(e) => { setGenderFilter(e.target.value); setPage(1); }}><option value="">All genders</option><option value="male">Male</option><option value="female">Female</option><option value="other">Other</option></select></Field>
@@ -164,7 +186,7 @@ export default function Students() {
                   {student.documents?.map((document) => <button key={document._id} type="button" className="block text-left text-brand-700 hover:underline" onClick={() => downloadDocument(student._id, document._id)}>{document.name}</button>)}
                   {!student.documents?.length && "—"}
                 </td>}
-                {canManage && <td className="td"><button className="mr-3 text-brand-600 hover:underline" onClick={() => openEdit(student)}>Edit</button><button className="text-red-600 hover:underline" onClick={() => confirm("Delete this student?") && del.mutate(student._id)}>Delete</button></td>}
+                {canManage && <td className="td"><div className="flex flex-col items-start gap-1"><button type="button" className="text-brand-700 hover:underline" disabled={downloadingId === student._id} onClick={() => downloadAdmissionProfile(student)}>{downloadingId === student._id ? "Preparing PDF…" : "Download admission PDF"}</button><div><button className="mr-3 text-brand-600 hover:underline" onClick={() => openEdit(student)}>Edit</button><button className="text-red-600 hover:underline" onClick={() => confirm("Delete this student?") && del.mutate(student._id)}>Delete</button></div></div></td>}
               </tr>
             ))}
             {!visibleStudents.length && <tr><td className="td text-center text-slate-500" colSpan={canManage ? 10 : 8}>No students found</td></tr>}

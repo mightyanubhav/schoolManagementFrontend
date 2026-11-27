@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { PageHeader, Modal, Field } from "../components/ui";
 import Pagination from "../components/Pagination";
+import { useDebouncedSearch } from "../hooks/useDebouncedSearch";
 
 const now = new Date();
 const blank = {
@@ -30,17 +31,18 @@ export default function Salary() {
   const [monthFilter, setMonthFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [page, setPage] = useState(1);
+  const debouncedSearch = useDebouncedSearch(search, () => setPage(1));
 
   const salaries = useQuery({
-    queryKey: ["salaries", monthFilter, statusFilter, search, page],
-    queryFn: async () => {
+    queryKey: ["salaries", monthFilter, statusFilter, debouncedSearch, page],
+    queryFn: async ({ signal }) => {
       const response = await api.get("/salaries", { params: {
         ...(monthFilter && { month: monthFilter }),
         ...(statusFilter && { status: statusFilter }),
-        ...(search && { q: search }),
+        ...(debouncedSearch && { q: debouncedSearch }),
         page,
         limit: 25,
-      } });
+      }, signal });
       return {
         items: response.data,
         total: Number(response.headers["x-total-count"] || 0),
@@ -100,7 +102,7 @@ export default function Salary() {
       <div className="card mb-4 flex flex-col gap-3 sm:flex-row sm:items-end">
         <div className="flex-1">
           <label className="label">Search</label>
-          <input className="input w-full" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Teacher name or employee ID" />
+          <input className="input w-full" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Teacher name or employee ID" />
         </div>
         <div>
           <label className="label">Month</label>

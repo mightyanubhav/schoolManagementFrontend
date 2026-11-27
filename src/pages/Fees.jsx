@@ -4,11 +4,11 @@ import { api } from "../api/client";
 import { Field, PageHeader } from "../components/ui";
 import { useAuth } from "../context/AuthContext";
 import Pagination from "../components/Pagination";
+import { useDebouncedSearch } from "../hooks/useDebouncedSearch";
 
 const feeFields = [
   ["admissionFee", "Admission Fee"],
   ["securityDeposit", "Security Deposit"],
-  ["schoolFee", "School Fee"],
   ["registrationFee", "Registration Fee"],
   ["examinationFee", "Examination Fee"],
   ["computerEducationFee", "Computer Education Fee"],
@@ -21,7 +21,8 @@ const feeFields = [
   ["shoesSocks", "Shoes + Socks"],
   ["books", "Books"],
   ["dressFee", "Dress Fee"],
-  ["monthlyFee", "Monthly Fee"],
+  ["previousDues", "Previous Dues"],
+  ["schoolFee", "School Fee (Monthly)"],
 ];
 const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const emptyStructure = Object.fromEntries(feeFields.map(([key]) => [key, ""]));
@@ -90,6 +91,7 @@ export default function Fees() {
 
 function StudentFees() {
   const [page, setPage] = useState(1);
+  const [section, setSection] = useState("one-time");
   const fees = useQuery({
     queryKey: ["my-fees", page],
     queryFn: async () => {
@@ -101,10 +103,7 @@ function StudentFees() {
     },
   });
   const data = fees.data;
-  const totals = data?.totals || { total: 0, paid: 0, due: 0 };
-  const upcoming = data?.monthlyDues?.filter((item) => item.state === "upcoming" && item.dueAmount > 0) || [];
-  const outstanding = data?.monthlyDues?.filter((item) => ["overdue", "due"].includes(item.state) && item.dueAmount > 0) || [];
-  const legacyDue = data?.legacyFees?.filter((fee) => fee.status !== "paid") || [];
+  const monthlyRecords = data?.monthlyDues?.filter((item) => item.state !== "upcoming") || [];
 
   return (
     <div>
@@ -115,40 +114,43 @@ function StudentFees() {
       {fees.isLoading && <div className="card text-sm text-slate-500">Loading fee information…</div>}
       {fees.isError && <div role="alert" className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{fees.error.response?.data?.error || "Could not load your fee information"}</div>}
       {data && <>
-        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <FeeMetric label={`Academic year ${data.academicYear}–${data.academicYear + 1} total`} value={totals.total} />
-          <FeeMetric label="Total paid" value={totals.paid} color="text-green-700" />
-          <FeeMetric label="Outstanding dues" value={totals.due} color="text-amber-700" />
+        <div className="mb-4 flex flex-wrap gap-2 border-b border-slate-200 pb-3" role="tablist" aria-label="Fee sections">
+          {[["one-time", "One-time fee"], ["monthly", "Monthly fee"], ["history", "Payment history"]].map(([value, label]) => (
+            <button key={value} type="button" role="tab" aria-selected={section === value} className={section === value ? "btn-primary" : "btn-ghost"} onClick={() => setSection(value)}>{label}</button>
+          ))}
         </div>
 
-        {data.structure && <section className="card mb-4">
-          <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
-            <div><h2 className="text-lg font-semibold">One-time fee structure</h2><p className="text-xs text-slate-500">Fee amounts and payments recorded by the school.</p></div>
-            <span className="text-sm font-semibold">Total {money(data.structure.oneTimeTotal)} · Paid {money(data.structure.oneTimePaid)} · Due {money(data.structure.oneTimeDue)}</span>
-          </div>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {data.structure.items.map((item) => <div key={item.name} className="flex justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm"><span>{item.name}</span><strong>{money(item.amount)}</strong></div>)}
-          </div>
+        {section === "one-time" && <section role="tabpanel" className="space-y-4">
+          {data.structure && <div className="card">
+            <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+              <div><h2 className="text-lg font-semibold">One-time fees</h2><p className="text-xs text-slate-500">One-time charges and any opening dues on your account.</p></div>
+              <span className="text-sm font-semibold">Total {money(data.structure.oneTimeTotal)} · Paid {money(data.structure.oneTimePaid)} · Due {money(data.structure.oneTimeDue)}</span>
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {data.structure.items.map((item) => <div key={item.name} className="flex justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm"><span>{item.name}</span><strong>{money(item.amount)}</strong></div>)}
+              {!data.structure.items.length && <p className="text-sm text-slate-500">No one-time fees are configured.</p>}
+            </div>
+          </div>}
+          {data.legacyFees.length > 0 && <section className="card p-0 overflow-x-auto">
+            <div className="p-4"><h3 className="font-semibold">Other fee records</h3><p className="text-xs text-slate-500">Earlier fee records, including any unpaid balance.</p></div>
+            <table className="w-full"><thead className="bg-gray-50"><tr><th className="th">Fee</th><th className="th">Amount</th><th className="th">Status</th><th className="th">Due date</th></tr></thead>
+              <tbody>{data.legacyFees.map((fee) => <tr key={fee._id} className="border-t border-gray-100"><td className="td">{fee.label}</td><td className="td">{money(fee.amount)}</td><td className="td capitalize">{fee.status}</td><td className="td">{fee.dueDate ? new Date(fee.dueDate).toLocaleDateString("en-IN") : "—"}</td></tr>)}</tbody>
+            </table>
+          </section>}
+          {!data.structure && !data.legacyFees.length && <div className="card text-sm text-slate-500">No one-time fee records are available.</div>}
         </section>}
 
-        <section className="card mb-4 p-0 overflow-x-auto">
-          <div className="p-4"><h2 className="font-semibold">Monthly fee · {data.academicYear}–{data.academicYear + 1}</h2><p className="text-xs text-slate-500">Outstanding months are shown as due; future months are upcoming. Ask the school office for exact payment deadlines.</p></div>
+        {section === "monthly" && <section role="tabpanel" className="card p-0 overflow-x-auto">
+          <div className="p-4"><h2 className="font-semibold">Monthly fee · Academic year {data.academicYear}–{data.academicYear + 1}</h2><p className="text-xs text-slate-500">Paid and due months for this academic year.</p></div>
           <table className="w-full">
             <thead className="bg-gray-50"><tr><th className="th">Month</th><th className="th">Monthly fee</th><th className="th">Paid</th><th className="th">Due</th><th className="th">Status</th></tr></thead>
-            <tbody>{data.monthlyDues.map((item) => <tr key={`${item.year}-${item.month}`} className="border-t border-gray-100"><td className="td">{monthNames[item.month - 1]} {item.year}</td><td className="td">{money(item.totalFee)}</td><td className="td">{money(item.paidAmount)}</td><td className="td">{money(item.dueAmount)}</td><td className="td"><span className={`rounded px-2 py-0.5 text-xs capitalize ${item.state === "paid" ? "bg-green-100 text-green-700" : item.state === "upcoming" ? "bg-blue-100 text-blue-700" : item.state === "overdue" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>{item.state}</span></td></tr>)}
-              {!data.monthlyDues.length && <tr><td className="td text-center text-slate-500" colSpan="5">No monthly fee is configured.</td></tr>}
+            <tbody>{monthlyRecords.map((item) => <tr key={`${item.year}-${item.month}`} className="border-t border-gray-100"><td className="td">{monthNames[item.month - 1]} {item.year}</td><td className="td">{money(item.totalFee)}</td><td className="td">{money(item.paidAmount)}</td><td className="td">{money(item.dueAmount)}</td><td className="td"><span className={`rounded px-2 py-0.5 text-xs capitalize ${item.state === "paid" ? "bg-green-100 text-green-700" : item.state === "overdue" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>{item.state === "overdue" ? "Due" : item.state}</span></td></tr>)}
+              {!monthlyRecords.length && <tr><td className="td text-center text-slate-500" colSpan="5">No paid or due monthly fees for this academic year.</td></tr>}
             </tbody>
           </table>
-        </section>
-
-        {(outstanding.length > 0 || upcoming.length > 0 || legacyDue.length > 0) && <section className="card mb-4">
-          <h2 className="mb-3 text-lg font-semibold">Upcoming and outstanding dues</h2>
-          {data.structure?.oneTimeDue > 0 && <div className="mb-2 flex justify-between rounded-lg bg-amber-50 px-3 py-2 text-sm"><span>Outstanding one-time fees</span><strong>{money(data.structure.oneTimeDue)}</strong></div>}
-          {[...outstanding, ...upcoming].map((item) => <div key={`due-${item.year}-${item.month}`} className="mb-2 flex justify-between rounded-lg bg-amber-50 px-3 py-2 text-sm"><span>{monthNames[item.month - 1]} {item.year} monthly fee {item.state === "upcoming" ? "(upcoming)" : "(due)"}</span><strong>{money(item.dueAmount)}</strong></div>)}
-          {legacyDue.map((fee) => <div key={fee._id} className="mb-2 flex justify-between rounded-lg bg-amber-50 px-3 py-2 text-sm"><span>{fee.label} {fee.dueDate ? `(due ${new Date(fee.dueDate).toLocaleDateString("en-IN")})` : "(due date not set)"}</span><strong>{money(fee.amount)} · {fee.status}</strong></div>)}
         </section>}
 
-        <section className="card mb-4 p-0 overflow-x-auto">
+        {section === "history" && <section role="tabpanel" className="card p-0 overflow-x-auto">
           <div className="p-4"><h2 className="font-semibold">Payment history</h2></div>
           <table className="w-full">
             <thead className="bg-gray-50"><tr><th className="th">Date</th><th className="th">Type</th><th className="th">Month</th><th className="th">Total</th><th className="th">Paid</th><th className="th">Remaining</th><th className="th">Receipt</th></tr></thead>
@@ -156,23 +158,11 @@ function StudentFees() {
               {!data.payments.length && <tr><td className="td text-center text-slate-500" colSpan="7">No payments have been recorded yet.</td></tr>}
             </tbody>
           </table>
-        </section>
-        <Pagination page={page} total={data.paymentPage.total} limit={25} onChange={setPage} />
-
-        {data.legacyFees.length > 0 && <section className="card p-0 overflow-x-auto">
-          <div className="p-4"><h2 className="font-semibold">Other fee records</h2><p className="text-xs text-slate-500">Earlier fee records are shown separately from the current fee structure.</p></div>
-          <table className="w-full">
-            <thead className="bg-gray-50"><tr><th className="th">Fee</th><th className="th">Amount</th><th className="th">Status</th><th className="th">Due date</th></tr></thead>
-            <tbody>{data.legacyFees.map((fee) => <tr key={fee._id} className="border-t border-gray-100"><td className="td">{fee.label}</td><td className="td">{money(fee.amount)}</td><td className="td capitalize">{fee.status}</td><td className="td">{fee.dueDate ? new Date(fee.dueDate).toLocaleDateString("en-IN") : "—"}</td></tr>)}</tbody>
-          </table>
         </section>}
+        {section === "history" && <Pagination page={page} total={data.paymentPage.total} limit={25} onChange={setPage} />}
       </>}
     </div>
   );
-}
-
-function FeeMetric({ label, value, color = "text-slate-900" }) {
-  return <div className="card"><span className="block text-xs text-slate-500">{label}</span><strong className={`mt-1 block text-2xl ${color}`}>{money(value)}</strong></div>;
 }
 
 function AdminFees() {
@@ -193,15 +183,17 @@ function AdminFees() {
   const [reportYear, setReportYear] = useState(`${currentAcademicYear}`);
   const [reportSearch, setReportSearch] = useState("");
   const [reportPage, setReportPage] = useState(1);
+  const debouncedStudentSearch = useDebouncedSearch(studentSearch, () => setStudentPage(1));
+  const debouncedReportSearch = useDebouncedSearch(reportSearch, () => setReportPage(1));
 
   const students = useQuery({
-    queryKey: ["fee-students", studentSearch, studentPage],
-    queryFn: async () => {
+    queryKey: ["fee-students", debouncedStudentSearch, studentPage],
+    queryFn: async ({ signal }) => {
       const response = await api.get("/fees/students", { params: {
-        ...(studentSearch && { q: studentSearch }),
+        ...(debouncedStudentSearch && { q: debouncedStudentSearch }),
         page: studentPage,
         limit: 25,
-      } });
+      }, signal });
       return { items: response.data, total: Number(response.headers["x-total-count"] || 0) };
     },
   });
@@ -217,15 +209,15 @@ function AdminFees() {
     enabled: !!studentId,
   });
   const report = useQuery({
-    queryKey: ["fee-report", reportMonth, reportYear, reportSearch, reportPage],
-    queryFn: async () => {
+    queryKey: ["fee-report", reportMonth, reportYear, debouncedReportSearch, reportPage],
+    queryFn: async ({ signal }) => {
       const response = await api.get("/fees/report", { params: {
       year: reportYear,
       ...(reportMonth && { month: reportMonth }),
-      ...(reportSearch && { q: reportSearch }),
+      ...(debouncedReportSearch && { q: debouncedReportSearch }),
       page: reportPage,
       limit: 25,
-      } });
+      }, signal });
       return {
         ...response.data,
         pageTotal: Number(response.headers["x-total-count"] || 0),
@@ -237,7 +229,10 @@ function AdminFees() {
   useEffect(() => {
     if (management.data) {
       const current = management.data.structure || {};
-      setStructureForm(Object.fromEntries(feeFields.map(([key]) => [key, current[key] == null ? "" : String(current[key])])));
+      setStructureForm(Object.fromEntries(feeFields.map(([key]) => {
+        const value = key === "schoolFee" ? (current.schoolFee || current.monthlyFee || 0) : current[key];
+        return [key, value == null ? "" : String(value)];
+      })));
     }
   }, [management.data]);
 
@@ -259,7 +254,7 @@ function AdminFees() {
   const selectedStudent = management.data?.student;
   const oneTimeTotal = management.data?.oneTimeTotal || 0;
   const oneTimePaid = management.data?.paymentSummary?.oneTimePaid || 0;
-  const monthlyFee = management.data?.structure?.monthlyFee || 0;
+  const monthlyFee = management.data?.structure?.schoolFee || management.data?.structure?.monthlyFee || 0;
   const monthlyPaid = management.data?.paymentSummary?.monthlyByPeriod
     ?.find((payment) => payment.month === Number(month) && payment.year === Number(year))?.paidAmount || 0;
   const paymentHistory = management.data?.payments || [];
@@ -284,8 +279,13 @@ function AdminFees() {
 
   function saveFeeStructure(event) {
     event.preventDefault();
-    saveStructure.mutate(Object.fromEntries(feeFields.map(([key]) => [key, Number(structureForm[key] || 0)])));
+    const values = Object.fromEntries(feeFields.map(([key]) => [key, Number(structureForm[key] || 0)]));
+    values.monthlyFee = values.schoolFee;
+    saveStructure.mutate(values);
   }
+
+  const oneTimeStructureTotal = feeFields.filter(([key]) => key !== "schoolFee")
+    .reduce((sum, [key]) => sum + Number(structureForm[key] || 0), 0);
 
   function calculatePayment(event) {
     event.preventDefault();
@@ -316,7 +316,7 @@ function AdminFees() {
 
       {tab !== "report" && (
         <div className="card mb-4 grid grid-cols-1 gap-3 sm:grid-cols-[minmax(12rem,1fr)_minmax(16rem,2fr)]">
-          <Field label="Search student"><input className="input w-full" maxLength={100} value={studentSearch} onChange={(event) => { setStudentSearch(event.target.value); setStudentPage(1); }} placeholder="Name, student ID, or roll number" /></Field>
+          <Field label="Search student"><input className="input w-full" maxLength={100} value={studentSearch} onChange={(event) => setStudentSearch(event.target.value)} placeholder="Name, student ID, or roll number" /></Field>
           <Field label="Select student"><select className="input w-full" value={studentId} onChange={(event) => changeStudent(event.target.value)}><option value="">Select a student</option>{students.data?.items?.map((student) => <option key={student._id} value={student._id}>{student.user?.name} · Roll {student.rollNo || "—"} · ID {student.admissionNo}</option>)}</select></Field>
         </div>
       )}
@@ -330,17 +330,26 @@ function AdminFees() {
 
       {tab === "structure" && studentId && management.data && (
         <form className="card" onSubmit={saveFeeStructure}>
-          <h2 className="mb-1 text-lg font-semibold">Fee structure · {selectedStudent.user?.name}</h2>
-          <p className="mb-4 text-sm text-slate-500">Set one-time fee amounts and the recurring monthly fee.</p>
+          <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+            <div><h2 className="text-lg font-semibold">Fee account · {selectedStudent.user?.name}</h2><p className="text-sm text-slate-500">Set this student’s fee heads, recurring tuition, and any opening balance carried forward.</p></div>
+            <div className="rounded-xl bg-slate-50 px-4 py-2 text-right"><span className="block text-xs text-slate-500">Current one-time balance</span><strong className="text-lg">{money(Math.max(0, oneTimeTotal - oneTimePaid))}</strong></div>
+          </div>
+          <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded-xl border border-slate-100 p-3"><span className="block text-xs text-slate-500">One-time charges</span><strong>{money(oneTimeStructureTotal)}</strong></div>
+            <div className="rounded-xl border border-slate-100 p-3"><span className="block text-xs text-slate-500">Collected</span><strong className="text-green-700">{money(oneTimePaid)}</strong></div>
+            <div className="rounded-xl border border-slate-100 p-3"><span className="block text-xs text-slate-500">School fee per month</span><strong>{money(structureForm.schoolFee)}</strong></div>
+          </div>
+          <h3 className="mb-3 font-semibold">One-time fee heads and opening dues</h3>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {feeFields.map(([key, label]) => (
+            {feeFields.filter(([key]) => key !== "schoolFee").map(([key, label]) => (
               <Field key={key} label={label}>
                 <div className="relative"><span className="absolute left-3 top-2.5 text-slate-400">₹</span><input className="input w-full pl-8" type="number" min="0" step="0.01" value={structureForm[key]} onChange={(event) => setStructureForm({ ...structureForm, [key]: event.target.value })} /></div>
               </Field>
             ))}
           </div>
+          <div className="mt-5 max-w-sm"><Field label="School fee (due every month)"><div className="relative"><span className="absolute left-3 top-2.5 text-slate-400">₹</span><input className="input w-full pl-8" type="number" min="0" step="0.01" value={structureForm.schoolFee} onChange={(event) => setStructureForm({ ...structureForm, schoolFee: event.target.value })} /></div></Field><p className="mt-1 text-xs text-slate-500">This amount is charged each month after the one-time fee heads.</p></div>
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <p className="font-semibold">One-time total: {money(feeFields.slice(0, -1).reduce((sum, [key]) => sum + Number(structureForm[key] || 0), 0))} <span className="ml-3 text-sm font-normal text-slate-500">Monthly: {money(structureForm.monthlyFee)}</span></p>
+            <p className="font-semibold">One-time charges: {money(oneTimeStructureTotal)} <span className="ml-3 text-sm font-normal text-slate-500">Balance after saved payments: {money(Math.max(0, oneTimeStructureTotal - oneTimePaid))}</span></p>
             <button className="btn-primary justify-center" disabled={saveStructure.isPending}>{saveStructure.isPending ? "Saving…" : "Save fee structure"}</button>
           </div>
           {saveStructure.isError && <p role="alert" className="mt-3 text-sm text-red-600">{saveStructure.error.response?.data?.error || "Could not save fee structure"}</p>}
@@ -355,14 +364,14 @@ function AdminFees() {
             {!management.data.structure && <p role="status" className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">Save this student’s fee structure before recording a payment.</p>}
             <div className="mb-4 flex flex-wrap gap-2">
               <button type="button" className={paymentType === "one-time" ? "btn-primary" : "btn-ghost"} onClick={() => { setPaymentType("one-time"); setAmount(""); savePayment.reset(); }}>One-time fee</button>
-              <button type="button" className={paymentType === "monthly" ? "btn-primary" : "btn-ghost"} onClick={() => { setPaymentType("monthly"); setAmount(""); savePayment.reset(); }}>Monthly fee</button>
+              <button type="button" className={paymentType === "monthly" ? "btn-primary" : "btn-ghost"} onClick={() => { setPaymentType("monthly"); setAmount(""); savePayment.reset(); }}>School fee · monthly</button>
             </div>
             {paymentType === "monthly" && (
               <div className="mb-4 grid max-w-xl grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field label="Month"><select className="input" value={`${month}-${year}`} onChange={(event) => { const [nextMonth, nextYear] = event.target.value.split("-"); setMonth(nextMonth); setYear(nextYear); setAmount(""); }}>{
                   allMonthsForAcademicYear(currentAcademicYear).map((item) => <option key={`${item.month}-${item.year}`} value={`${item.month}-${item.year}`}>{monthNames[item.month - 1]} {item.year}</option>)
                 }</select></Field>
-                <Field label="Monthly fee">{money(monthlyFee)}</Field>
+                <Field label="School fee this month">{money(monthlyFee)}</Field>
               </div>
             )}
             {paymentType === "one-time" && (
@@ -424,7 +433,7 @@ function AdminFees() {
       {tab === "report" && (
         <section>
           <div className="card mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <Field label="Search"><input className="input w-full" maxLength={100} value={reportSearch} onChange={(event) => { setReportSearch(event.target.value); setReportPage(1); }} placeholder="Student, roll, ID, or class" /></Field>
+            <Field label="Search"><input className="input w-full" maxLength={100} value={reportSearch} onChange={(event) => setReportSearch(event.target.value)} placeholder="Student, roll, ID, or class" /></Field>
             <Field label="Academic year"><select className="input" value={reportYear} onChange={(event) => { setReportYear(event.target.value); setReportPage(1); }}>{Array.from({ length: 7 }, (_, index) => currentAcademicYear - 3 + index).map((startYear) => <option key={startYear} value={startYear}>{startYear}–{startYear + 1}</option>)}</select></Field>
             <Field label="Month"><select className="input" value={reportMonth} onChange={(event) => { setReportMonth(event.target.value); setReportPage(1); }}><option value="">All months</option>{monthNames.map((name, index) => <option key={name} value={index + 1}>{name}</option>)}</select></Field>
           </div>

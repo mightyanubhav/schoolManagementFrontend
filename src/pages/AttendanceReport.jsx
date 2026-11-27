@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { Field } from "../components/ui";
 import { useAuth } from "../context/AuthContext";
 import Pagination from "../components/Pagination";
+import { useDebouncedSearch } from "../hooks/useDebouncedSearch";
 
 const statuses = [
   ["present", "Present", "text-green-700"],
@@ -52,28 +53,32 @@ export default function AttendanceReport() {
   const [search, setSearch] = useState("");
   const [recordsPage, setRecordsPage] = useState(1);
   const [peoplePage, setPeoplePage] = useState(1);
+  const debouncedSearch = useDebouncedSearch(search, () => {
+    setRecordsPage(1);
+    setPeoplePage(1);
+  });
 
   const classes = useQuery({ queryKey: ["classes"], queryFn: () => api.get("/classes").then(r => r.data) });
   useEffect(() => {
     setRecordsPage(1);
     setPeoplePage(1);
-  }, [type, from, to, classId, status, search]);
+  }, [type, from, to, classId, status]);
 
   const report = useQuery({
-    queryKey: ["attendance-report", type, from, to, classId, status, search, recordsPage, peoplePage],
-    queryFn: async () => {
+    queryKey: ["attendance-report", type, from, to, classId, status, debouncedSearch, recordsPage, peoplePage],
+    queryFn: async ({ signal }) => {
       const response = await api.get("/attendance/report", { params: {
       type,
       ...(from && { from }),
       ...(to && { to }),
       ...(type === "students" && classId && { class: classId }),
       ...(status && { status }),
-      ...(search && { q: search }),
+      ...(debouncedSearch && { q: debouncedSearch }),
         page: recordsPage,
         limit: 25,
         peoplePage,
         peopleLimit: 25,
-      } });
+      }, signal });
       return {
         ...response.data,
         recordsTotal: Number(response.headers["x-total-count"] || 0),
