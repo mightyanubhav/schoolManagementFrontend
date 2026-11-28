@@ -12,6 +12,7 @@ const navigation = [
   { to: "/subjects", label: "Subjects", roles: ["admin", "teacher"] },
   { to: "/attendance", label: "Attendance", roles: ["admin", "teacher", "student", "parent"] },
   { to: "/exams", label: "Exams", roles: ["admin", "teacher", "student", "parent"] },
+  { to: "/admit-cards", label: "Admit Cards", roles: ["admin", "student"] },
   { to: "/fees", label: "Fees", roles: ["admin", "student", "parent"] },
   { to: "/salary", label: "Salary", roles: ["admin"] },
   { to: "/announcements", label: "Announcements", roles: ["admin", "teacher", "student", "parent"] },

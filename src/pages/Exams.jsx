@@ -37,13 +37,6 @@ function gradeFor(marks, maxMarks, passMarks) {
   return "E";
 }
 
-function examGroupKey(exam) {
-  const classId = String(exam.class?._id || exam.class);
-  const normalizedName = String(exam.name || "").trim().replace(/\s+\d{4}$/, "").replace(/\s+/g, " ").toLowerCase();
-  const year = exam.date ? new Date(exam.date).getFullYear() : "undated";
-  return `${classId}:${normalizedName}:${year}`;
-}
-
 export default function Exams() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -94,12 +87,6 @@ export default function Exams() {
     },
     enabled: tab === "results" && isAdmin,
   });
-  const studentAdmitCards = useQuery({
-    queryKey: ["student-admit-cards", user?.id],
-    queryFn: () => api.get("/exams/admit-cards").then((response) => response.data),
-    enabled: user?.role === "student" && tab === "admit-cards",
-  });
-
   useEffect(() => {
     if (!markSheet.data) return;
     setEntries(Object.fromEntries(markSheet.data.students.map((student) => [student._id, {
@@ -176,16 +163,6 @@ export default function Exams() {
     const text = `${exam.name} ${exam.term || ""} ${exam.subject?.name || ""} ${exam.class?.name || ""} ${exam.class?.section || ""}`.toLowerCase();
     return text.includes(search.toLowerCase());
   }) || [];
-  const admitCardRepresentativeIds = new Set();
-  const seenAdmitCardGroups = new Set();
-  for (const exam of visibleExams) {
-    const key = examGroupKey(exam);
-    if (!seenAdmitCardGroups.has(key)) {
-      seenAdmitCardGroups.add(key);
-      admitCardRepresentativeIds.add(exam._id);
-    }
-  }
-
   function submitExam(event) {
     event.preventDefault();
     createExam.mutate({
@@ -218,22 +195,6 @@ export default function Exams() {
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch {
       window.alert("Could not download report card. Please try again.");
-    }
-  }
-
-  async function downloadAdmitCard(group) {
-    try {
-      const response = await api.get(`/exams/${group._id}/admit-cards/pdf`, { responseType: "blob" });
-      const url = URL.createObjectURL(response.data);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `admit-cards-${String(group.name).replace(/[^a-z\d_-]/gi, "_")}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch {
-      window.alert("Could not download admit card. Please try again.");
     }
   }
 
@@ -275,10 +236,9 @@ export default function Exams() {
         {canManageExams && <button type="button" className={tab === "exams" ? "btn-primary" : "btn-ghost"} onClick={() => setTab("exams")}>Exams & marks</button>}
         {canManageExams && <button type="button" className={tab === "marks" ? "btn-primary" : "btn-ghost"} onClick={() => setTab("marks")}>Save marks{selectedExam ? ` (${selectedExam.marks?.length || 0}/${selectedExam.studentCount || 0})` : ""}</button>}
         <button type="button" className={tab === "results" ? "btn-primary" : "btn-ghost"} onClick={() => setTab("results")}>Result records</button>
-        {user?.role === "student" && <button type="button" className={tab === "admit-cards" ? "btn-primary" : "btn-ghost"} onClick={() => setTab("admit-cards")}>Admit cards</button>}
       </div>
 
-      {tab !== "marks" && !(user?.role === "student" && tab === "admit-cards") && <div className={`card mb-4 grid grid-cols-1 gap-3 ${user?.role === "student" ? "" : "sm:grid-cols-2"}`}>
+      {tab !== "marks" && <div className={`card mb-4 grid grid-cols-1 gap-3 ${user?.role === "student" ? "" : "sm:grid-cols-2"}`}>
         <Field label="Search"><input className="input w-full" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={tab === "results" && isAdmin ? "Student name, admission number, or roll" : tab === "results" ? "Student, exam, subject, or class" : "Exam, term, subject, or class"} /></Field>
         {user?.role !== "student" && <Field label="Class"><select className="input" value={classFilter} onChange={(event) => { setClassFilter(event.target.value); setPage(1); setSelectedExamId(""); }}><option value="">All classes</option>{classes.data?.map((schoolClass) => <option key={schoolClass._id} value={schoolClass._id}>{schoolClass.name} · Section {schoolClass.section || "A"}</option>)}</select></Field>}
       </div>}
@@ -303,7 +263,6 @@ export default function Exams() {
                 <td className="td"><span className={`rounded px-2 py-0.5 text-xs ${exam.status === "published" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{exam.status || "draft"}</span></td>
                 <td className="td whitespace-nowrap">
                   <button type="button" className="mr-3 text-brand-700 hover:underline" onClick={() => { setSelectedExamId(exam._id); setTab("marks"); setMarkSearch(""); setMarkFilter("all"); saveMarks.reset(); publish.reset(); }}>Enter marks</button>
-                  {admitCardRepresentativeIds.has(exam._id) && <button type="button" className="mr-3 text-brand-700 hover:underline" onClick={() => downloadAdmitCard(exam)}>Admit cards PDF</button>}
                   {isAdmin && (exam.status === "published"
                     ? <button type="button" className="mr-3 text-amber-700 hover:underline" onClick={() => confirm("Unpublish these results? Students will no longer see them.") && unpublish.mutate(exam._id)}>Unpublish</button>
                     : <button type="button" className="mr-3 text-green-700 hover:underline" onClick={() => { setSelectedExamId(exam._id); setTab("marks"); publish.reset(); }}>Declare results</button>)}
@@ -444,35 +403,6 @@ export default function Exams() {
             <Pagination page={page} total={exams.data?.total || 0} limit={25} onChange={setPage} />
             {!exams.isLoading && !exams.isError && !visibleResults.length && <div className="card text-center text-sm text-slate-500">No published result records match your filters.</div>}
           </>}
-        </div>
-      )}
-
-      {tab === "admit-cards" && user?.role === "student" && (
-        <div className="space-y-4">
-          {studentAdmitCards.isLoading && <div className="card text-sm text-slate-500">Loading admit cards…</div>}
-          {studentAdmitCards.isError && <div role="alert" className="card text-sm text-red-600">{studentAdmitCards.error.response?.data?.error || "Could not load admit cards"}</div>}
-          {studentAdmitCards.data?.map((group) => (
-            <section key={group._id} className="card p-0 overflow-x-auto">
-              <div className="flex flex-wrap items-start justify-between gap-3 p-4">
-                <div>
-                  <h2 className="text-lg font-semibold">{group.name}{group.term ? ` · ${group.term}` : ""}{group.year ? ` · ${group.year}` : ""}</h2>
-                  <p className="text-sm text-slate-500">{group.class?.name} · Section {group.class?.section || "A"}</p>
-                </div>
-                <button type="button" className="btn-primary justify-center" onClick={() => downloadAdmitCard(group)}>Download admit card</button>
-              </div>
-              <table className="w-full">
-                <thead className="bg-gray-50"><tr><th className="th">Subject</th><th className="th">Subject code</th><th className="th">Exam date</th></tr></thead>
-                <tbody>{group.subjects.map((subject) => (
-                  <tr key={subject.examId} className="border-t border-gray-100">
-                    <td className="td">{subject.name}</td>
-                    <td className="td">{subject.code || "—"}</td>
-                    <td className="td">{subject.date ? new Date(subject.date).toLocaleDateString() : "To be announced"}</td>
-                  </tr>
-                ))}</tbody>
-              </table>
-            </section>
-          ))}
-          {!studentAdmitCards.isLoading && !studentAdmitCards.isError && !studentAdmitCards.data?.length && <div className="card text-center text-sm text-slate-500">No admit cards are available for your class yet.</div>}
         </div>
       )}
 

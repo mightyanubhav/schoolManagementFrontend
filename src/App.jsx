@@ -9,6 +9,7 @@ import Classes from "./pages/Classes";
 import Subjects from "./pages/Subject";
 import Attendance from "./pages/Attendance";
 import Exams from "./pages/Exams";
+import AdmitCards from "./pages/AdmitCards";
 import Fees from "./pages/Fees";
 import Announcements from "./pages/Announcements";
 import Timetable from "./pages/Timetable";
@@ -43,6 +44,7 @@ export default function App() {
         <Route path="subjects" element={<RoleRoute roles={["admin", "teacher"]}><Subjects /></RoleRoute>} />
         <Route path="attendance" element={<Attendance />} />
         <Route path="exams" element={<Exams />} />
+        <Route path="admit-cards" element={<RoleRoute roles={["admin", "student"]}><AdmitCards /></RoleRoute>} />
         <Route path="fees" element={<RoleRoute roles={["admin", "student", "parent"]}><Fees /></RoleRoute>} />
         <Route path="salary" element={<RoleRoute roles={["admin"]}><Salary /></RoleRoute>} />
         <Route path="announcements" element={<Announcements />} />
